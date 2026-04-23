@@ -1,6 +1,5 @@
 python-telegram-bot==20.7
-selenium==4.15.0
-selenium-stealth==1.0.6
 requests==2.31.0
 urllib3==2.1.0
+beautifulsoup4==4.12.3
 aiohttp==3.9.0

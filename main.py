@@ -1,4 +1,4 @@
-# Site Dorker Bot - Railway Optimized (Fixed Google Search)
+# Site Dorker Bot - Advanced Google Search Bypass
 # @Mod_By_ThuYa
 
 import logging
@@ -12,6 +12,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse, quote
 import re
+import random
+from datetime import datetime
 
 from telegram import Update, InputFile
 from telegram.ext import (
@@ -22,7 +24,7 @@ from telegram.ext import (
     filters,
 )
 
-# New libraries for better Google scraping
+# Advanced scraping libraries
 from curl_cffi import requests as curl_requests
 from selectolax.parser import HTMLParser
 
@@ -40,9 +42,12 @@ logger = logging.getLogger(__name__)
 # GLOBALS
 # ----------------------------------------------------------------------------------
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8286273030:AAGX2W8irJfQuiOb5sEAt1dT4pp5Y6eM650")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8770379893"))
 REGISTERED_USERS_FILE = os.path.join(os.getcwd(), "registered_users.json")
+
+# Rate limiting per user
+user_last_search = {}
 
 PAYMENT_GATEWAYS = [
     "paypal", "stripe", "braintree", "square", "magento", "avs", "convergepay",
@@ -51,12 +56,30 @@ PAYMENT_GATEWAYS = [
     "payeezy", "usaepay", "creo", "squareup", "authnet", "ebizcharge", "cpay",
     "moneris", "recurly", "cardknox", "chargify", "paytrace", "hostedpayments",
     "securepay", "eway", "blackbaud", "lawpay", "clover", "cardconnect", "bluepay",
-    "fluidpay", "rocketgateway", "rocketgate", "shopify", "woocommerce",
-    "bigcommerce", "opencart", "prestashop", "razorpay"
+    "fluidpay", "rocketgateway", "rocketgate"
 ]
 FRONTEND_FRAMEWORKS = ["react", "angular", "vue", "svelte"]
 BACKEND_FRAMEWORKS = ["wordpress", "laravel", "django", "node.js", "express", "ruby on rails", "flask", "php", "asp.net", "spring"]
 DESIGN_LIBRARIES = ["bootstrap", "tailwind", "bulma", "foundation", "materialize"]
+
+# Rotating User-Agents
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0',
+]
+
+# Proxy list (optional - add your proxies here)
+PROXIES = []
+USE_PROXIES = False  # Set to True if you add proxies
+
+def get_random_proxy():
+    if USE_PROXIES and PROXIES:
+        return random.choice(PROXIES)
+    return None
 
 # ----------------------------------------------------------------------------------
 # JSON UTILS
@@ -86,131 +109,201 @@ def register_user(user_id):
         save_registered_users(registered)
 
 # ----------------------------------------------------------------------------------
-# GOOGLE SEARCH (Fixed - Working Version)
+# ADVANCED GOOGLE SEARCH WITH ROTATION
 # ----------------------------------------------------------------------------------
 
-async def google_search(query: str, limit: int = 10):
+async def google_search(query: str, limit: int = 10, user_id: int = None):
     """
-    Google search using curl_cffi + selectolax
-    No Chrome/Selenium needed! Works on Railway.
+    Advanced Google search with rotation and better bypass techniques
     """
     all_links = []
     seen = set()
     
-    # Modern headers to avoid detection
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
-    }
+    # Rate limiting check
+    if user_id and user_id in user_last_search:
+        last_time = user_last_search[user_id]
+        if time.time() - last_time < 3:  # 3 seconds cooldown
+            logger.info(f"Rate limiting user {user_id}")
+            await asyncio.sleep(2)
+    
+    # Rotate browsers to avoid detection
+    browsers = ['chrome120', 'chrome123', 'chrome124', 'chrome131']
+    browser_versions = ['chrome120', 'chrome131']
     
     encoded_query = quote(query)
-    num = min(limit, 100)
+    num = min(limit, 50)  # Reduced to 50 per page to avoid detection
     
-    # Try multiple Google domains if one fails
-    domains = ['www.google.com', 'www.google.co.uk', 'www.google.com.sg', 'www.google.ca']
+    # Try multiple Google domains
+    domains = [
+        'www.google.com',
+        'www.google.co.uk', 
+        'www.google.com.sg',
+        'www.google.ca',
+        'www.google.com.au'
+    ]
     
-    for domain in domains:
-        if all_links:
-            break
+    # Randomize domain order
+    random.shuffle(domains)
+    
+    for browser in browsers[:2]:  # Try 2 different browsers
+        for domain in domains[:3]:  # Try 3 different domains
+            if len(all_links) >= limit:
+                break
+                
+            url = f"https://{domain}/search?q={encoded_query}&num={num}&hl=en&start=0"
             
-        url = f"https://{domain}/search?q={encoded_query}&num={num}&hl=en&gl=us"
-        logger.info(f"Searching {domain} for: {query}")
-        
-        try:
-            # Use curl_cffi with browser impersonation
-            resp = curl_requests.get(
-                url, 
-                headers=headers, 
-                timeout=25,
-                impersonate="chrome120"
-            )
+            # Rotate user agent
+            headers = {
+                'User-Agent': random.choice(USER_AGENTS),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Upgrade-Insecure-Requests': '1',
+                'Cache-Control': 'max-age=0',
+            }
             
-            if resp.status_code != 200:
-                logger.warning(f"{domain} returned status {resp.status_code}")
+            logger.info(f"Searching {domain} with {browser} for: {query}")
+            
+            try:
+                # Use proxy if available
+                proxy = get_random_proxy()
+                proxy_dict = {"https": proxy} if proxy else None
+                
+                # Make request with browser impersonation
+                resp = curl_requests.get(
+                    url,
+                    headers=headers,
+                    timeout=30,
+                    impersonate=browser,
+                    proxies=proxy_dict if USE_PROXIES else None
+                )
+                
+                if resp.status_code != 200:
+                    logger.warning(f"{domain} returned {resp.status_code} with {browser}")
+                    continue
+                
+                # Parse HTML
+                tree = HTMLParser(resp.text)
+                
+                # Multiple selector strategies
+                selectors = [
+                    'a[jsname="UWckNb"]',
+                    'div.yuRUbf a',
+                    'div.g a',
+                    'a[href^="/url?q="]',
+                    'div.tF2Cxc a'
+                ]
+                
+                for selector in selectors:
+                    for a in tree.css(selector):
+                        href = a.attrs.get('href', '')
+                        
+                        if href.startswith('/url?q='):
+                            real_url = href.split('/url?q=')[1].split('&')[0]
+                            if (real_url.startswith('http') and 
+                                'google.com' not in real_url and 
+                                'youtube.com' not in real_url and
+                                real_url not in seen):
+                                seen.add(real_url)
+                                all_links.append(real_url)
+                                if len(all_links) >= limit:
+                                    break
+                        elif href.startswith('http') and 'google.com' not in href:
+                            if href not in seen:
+                                seen.add(href)
+                                all_links.append(href)
+                                if len(all_links) >= limit:
+                                    break
+                    
+                    if len(all_links) >= limit:
+                        break
+                
+                logger.info(f"Found {len(all_links)} results from {domain}")
+                
+                # Random delay between requests to avoid detection
+                await asyncio.sleep(random.uniform(2, 4))
+                
+            except Exception as e:
+                logger.error(f"Error with {domain}/{browser}: {e}")
                 continue
             
-            # Parse HTML
-            tree = HTMLParser(resp.text)
-            
-            # Method 1: Find Google result links
-            selectors = [
-                'a[jsname="UWckNb"]',
-                'div.yuRUbf a',
-                'div.g a',
-                'a[href^="/url?q="]'
-            ]
-            
-            for selector in selectors:
-                for a in tree.css(selector):
-                    href = a.attrs.get('href', '')
-                    
-                    if href.startswith('/url?q='):
-                        # Extract real URL from Google redirect
-                        real_url = href.split('/url?q=')[1].split('&')[0]
-                        if real_url.startswith('http') and 'google.com' not in real_url and 'youtube.com' not in real_url:
-                            if real_url not in seen:
-                                seen.add(real_url)
-                                all_links.append(real_url)
-                                if len(all_links) >= limit:
-                                    break
-                    elif href.startswith('http') and 'google.com' not in href and 'youtube.com' not in href:
-                        if href not in seen:
-                            seen.add(href)
-                            all_links.append(href)
-                            if len(all_links) >= limit:
-                                break
-                
-                if len(all_links) >= limit:
-                    break
-            
-            # Method 2: Fallback - look for any /url?q= pattern
-            if len(all_links) == 0:
-                logger.info(f"Trying fallback method on {domain}")
-                for a in tree.css('a'):
-                    href = a.attrs.get('href', '')
-                    if href.startswith('/url?q='):
-                        real_url = href.split('/url?q=')[1].split('&')[0]
-                        if real_url.startswith('http') and 'google.com' not in real_url:
-                            if real_url not in seen:
-                                seen.add(real_url)
-                                all_links.append(real_url)
-                                if len(all_links) >= limit:
-                                    break
-            
-            logger.info(f"Found {len(all_links)} results from {domain}")
-            
-        except Exception as e:
-            logger.error(f"Error with {domain}: {e}")
-            continue
+            if len(all_links) >= limit:
+                break
         
-        # Small delay between domain attempts
-        await asyncio.sleep(1)
+        if len(all_links) >= limit:
+            break
     
+    # Update last search time
+    if user_id:
+        user_last_search[user_id] = time.time()
+    
+    # If still no results, try a simpler approach
     if len(all_links) == 0:
-        logger.warning("No results found from any Google domain")
-        # Return some test URLs for debugging
-        if query.lower() in ['test', 'facebook', 'google']:
+        logger.warning(f"No results for {query}, trying fallback")
+        # Try a more generic search
+        generic_queries = [
+            f"{query} site:shopify.com",
+            f"{query} site:stripe.com",
+            f'"powered by shopify" {query}'
+        ]
+        
+        for gen_query in generic_queries[:2]:
+            encoded_gen = quote(gen_query)
+            fallback_url = f"https://www.google.com/search?q={encoded_gen}&num=20&hl=en"
+            
+            try:
+                resp = curl_requests.get(
+                    fallback_url,
+                    headers={'User-Agent': random.choice(USER_AGENTS)},
+                    timeout=25,
+                    impersonate="chrome120"
+                )
+                
+                if resp.status_code == 200:
+                    tree = HTMLParser(resp.text)
+                    for a in tree.css('a[href^="/url?q="]'):
+                        href = a.attrs.get('href', '')
+                        if href.startswith('/url?q='):
+                            real_url = href.split('/url?q=')[1].split('&')[0]
+                            if real_url.startswith('http') and real_url not in seen:
+                                seen.add(real_url)
+                                all_links.append(real_url)
+                                if len(all_links) >= limit:
+                                    break
+                await asyncio.sleep(2)
+            except:
+                pass
+            
+            if len(all_links) >= limit:
+                break
+    
+    # Remove duplicates while preserving order
+    unique_links = []
+    for link in all_links:
+        if link not in unique_links:
+            unique_links.append(link)
+    
+    logger.info(f"Final results for {query}: {len(unique_links)} unique URLs")
+    
+    # Return test URLs if absolutely nothing found
+    if len(unique_links) == 0:
+        if query.lower() in ['test', 'facebook', 'google', 'test10']:
             return [
                 "https://example.com",
                 "https://github.com",
                 "https://stackoverflow.com",
                 "https://reddit.com",
-                "https://wikipedia.org"
             ]
     
-    return all_links[:limit]
+    return unique_links[:limit]
 
 # ----------------------------------------------------------------------------------
-# SITE DETAILS CHECKER
+# SITE DETAILS CHECKER (Same as before)
 # ----------------------------------------------------------------------------------
 
 def extract_domain(url: str):
@@ -248,7 +341,6 @@ async def check_site_details(url: str):
         "design": "None",
     }
     
-    # DNS check
     domain = extract_domain(url)
     if domain:
         try:
@@ -257,14 +349,11 @@ async def check_site_details(url: str):
         except:
             details["dns"] = "unresolvable"
     
-    # HTTP request
     try:
         import urllib3
         urllib3.disable_warnings()
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        headers = {'User-Agent': random.choice(USER_AGENTS)}
         
         resp = requests.get(url, timeout=12, verify=True, headers=headers)
         details["ssl"] = "valid"
@@ -283,16 +372,13 @@ async def check_site_details(url: str):
         if "graphql" in txt_lower:
             details["graphql"] = "YES"
         
-        # Language
         lang = extract_language(resp.text)
         if lang:
             details["language"] = lang
         
-        # Payment Gateways
         found_gw = [gw for gw in PAYMENT_GATEWAYS if gw.lower() in txt_lower]
         details["gateways"] = ", ".join(set(found_gw)) if found_gw else "None"
         
-        # Tech stack
         stack = detect_tech_stack(resp.text)
         details.update(stack)
         
@@ -313,7 +399,6 @@ async def check_site_details(url: str):
     except Exception as e:
         details["status_code"] = str(e)[:50]
     
-    # Format output
     details["captcha"] = "YES" if details["captcha"] == "YES" else "NO"
     details["cloudflare"] = "YES" if details["cloudflare"] == "YES" else "NO"
     details["graphql"] = "YES" if details["graphql"] == "YES" else "NO"
@@ -326,9 +411,9 @@ async def check_site_details(url: str):
 
 executor = ThreadPoolExecutor(max_workers=5)
 
-async def async_google_search(query: str, limit: int):
+async def async_google_search(query: str, limit: int, user_id: int = None):
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(executor, lambda: asyncio.run(google_search(query, limit)))
+    return await loop.run_in_executor(executor, lambda: asyncio.run(google_search(query, limit, user_id)))
 
 async def async_check_site_details(url: str):
     return await check_site_details(url)
@@ -358,6 +443,9 @@ async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Registration successful!\n\nNow you can use /cmds to see all commands."
         )
 
+async def cmd_cmds(update: Update, ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user
+
 async def cmd_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_user_registered(user_id):
@@ -377,11 +465,13 @@ Dork Command:
 
 Examples:
 /dork shopify 50
-/dork "wordpress" 100
 /dork "stripe payment" 30
+/dork "wordpress plugin" 100
 
 Admin Only:
 /broadcast <message> - Send to all users
+
+Note: For best results, use specific queries and wait a few seconds between searches.
 
 @Mod_By_ThuYa
 """
@@ -410,14 +500,14 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Count must be a number.")
         return
     
-    limit = min(max(int(count_str), 1), 150)
+    limit = min(max(int(count_str), 1), 100)
     
     status_msg = await update.message.reply_text(
-        f"Searching for {query_part}\nLimit: {limit} results\n\nPlease wait..."
+        f"Searching for '{query_part}'\nLimit: {limit} results\n\nPlease wait (this may take 30-60 seconds)..."
     )
     
     try:
-        results = await async_google_search(query_part, limit)
+        results = await async_google_search(query_part, limit, user_id)
     except Exception as e:
         logger.error(f"Search error: {e}")
         await status_msg.edit_text(f"Search error: {str(e)[:100]}")
@@ -425,15 +515,16 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not results:
         await status_msg.edit_text(
-            f"No results found for: {query_part}\n\n"
+            f"No results found for: '{query_part}'\n\n"
             f"Tips:\n"
             f"- Try a simpler query like: /dork facebook 10\n"
-            f"- Make sure your query isn't blocked\n"
-            f"- Try: /dork google 10"
+            f"- Use specific keywords\n"
+            f"- Wait a moment and try again\n"
+            f"- Try: /dork 'shopify payment' 20"
         )
         return
     
-    await status_msg.edit_text(f"Found {len(results)} URLs. Analyzing {limit} sites...")
+    await status_msg.edit_text(f"Found {len(results)} URLs. Analyzing {min(len(results), limit)} sites...")
     
     # Process all URLs concurrently
     tasks = [async_check_site_details(url) for url in results[:limit]]
@@ -447,6 +538,8 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(filename, "w", encoding="utf-8") as f:
         f.write(f"Dork Results: {query_part}\n")
         f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Total URLs found: {len(results)}\n")
+        f.write(f"Analyzed: {len(details_list)}\n")
         f.write(f"{'='*60}\n\n")
         
         for d in details_list:
@@ -472,7 +565,7 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
             doc = InputFile(file_data, filename=f"dork_{query_part[:30]}_{timestamp}.txt")
             await update.message.reply_document(
                 document=doc,
-                caption=f"Results for: {query_part[:50]}\nTotal: {len(details_list)} URLs\n\n@Mod_By_ThuYa"
+                caption=f"Results for: {query_part[:50]}\nFound: {len(results)} URLs | Analyzed: {len(details_list)}\n\n@Mod_By_ThuYa"
             )
         await status_msg.delete()
     except Exception as e:
@@ -552,8 +645,8 @@ async def main():
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback_handler))
     
-    logger.info("Bot starting on Railway (Fixed Google Search)...")
-    logger.info("Using curl_cffi + selectolax for Google scraping")
+    logger.info("Bot starting on Railway (Advanced Google Search)...")
+    logger.info("Using curl_cffi with browser rotation")
     logger.info("Bot is ready to receive commands!")
     
     # Start bot

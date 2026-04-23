@@ -2,4 +2,4 @@
 cmds = ["pip install --no-cache-dir -r requirements.txt"]
 
 [start]
-cmd = "python Site_Dorker_Bot.py"
+cmd = "python main.py"

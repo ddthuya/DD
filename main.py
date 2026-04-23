@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # GLOBALS
 # ----------------------------------------------------------------------------------
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8286273030:AAGX2W8irJfQuiOb5sEAt1dT4pp5Y6eM650")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8770379893"))
 REGISTERED_USERS_FILE = os.path.join(os.getcwd(), "registered_users.json")
 
@@ -71,15 +71,6 @@ USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/121.0',
 ]
-
-# Proxy list (optional - add your proxies here)
-PROXIES = []
-USE_PROXIES = False  # Set to True if you add proxies
-
-def get_random_proxy():
-    if USE_PROXIES and PROXIES:
-        return random.choice(PROXIES)
-    return None
 
 # ----------------------------------------------------------------------------------
 # JSON UTILS
@@ -122,37 +113,30 @@ async def google_search(query: str, limit: int = 10, user_id: int = None):
     # Rate limiting check
     if user_id and user_id in user_last_search:
         last_time = user_last_search[user_id]
-        if time.time() - last_time < 3:  # 3 seconds cooldown
+        if time.time() - last_time < 3:
             logger.info(f"Rate limiting user {user_id}")
             await asyncio.sleep(2)
     
-    # Rotate browsers to avoid detection
-    browsers = ['chrome120', 'chrome123', 'chrome124', 'chrome131']
-    browser_versions = ['chrome120', 'chrome131']
-    
+    browsers = ['chrome120', 'chrome123', 'chrome124']
     encoded_query = quote(query)
-    num = min(limit, 50)  # Reduced to 50 per page to avoid detection
+    num = min(limit, 50)
     
-    # Try multiple Google domains
     domains = [
         'www.google.com',
         'www.google.co.uk', 
         'www.google.com.sg',
         'www.google.ca',
-        'www.google.com.au'
     ]
     
-    # Randomize domain order
     random.shuffle(domains)
     
-    for browser in browsers[:2]:  # Try 2 different browsers
-        for domain in domains[:3]:  # Try 3 different domains
+    for browser in browsers[:2]:
+        for domain in domains[:3]:
             if len(all_links) >= limit:
                 break
                 
             url = f"https://{domain}/search?q={encoded_query}&num={num}&hl=en&start=0"
             
-            # Rotate user agent
             headers = {
                 'User-Agent': random.choice(USER_AGENTS),
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
@@ -164,39 +148,29 @@ async def google_search(query: str, limit: int = 10, user_id: int = None):
                 'Sec-Fetch-Site': 'none',
                 'Sec-Fetch-User': '?1',
                 'Upgrade-Insecure-Requests': '1',
-                'Cache-Control': 'max-age=0',
             }
             
             logger.info(f"Searching {domain} with {browser} for: {query}")
             
             try:
-                # Use proxy if available
-                proxy = get_random_proxy()
-                proxy_dict = {"https": proxy} if proxy else None
-                
-                # Make request with browser impersonation
                 resp = curl_requests.get(
                     url,
                     headers=headers,
                     timeout=30,
                     impersonate=browser,
-                    proxies=proxy_dict if USE_PROXIES else None
                 )
                 
                 if resp.status_code != 200:
-                    logger.warning(f"{domain} returned {resp.status_code} with {browser}")
+                    logger.warning(f"{domain} returned {resp.status_code}")
                     continue
                 
-                # Parse HTML
                 tree = HTMLParser(resp.text)
                 
-                # Multiple selector strategies
                 selectors = [
                     'a[jsname="UWckNb"]',
                     'div.yuRUbf a',
                     'div.g a',
                     'a[href^="/url?q="]',
-                    'div.tF2Cxc a'
                 ]
                 
                 for selector in selectors:
@@ -224,8 +198,6 @@ async def google_search(query: str, limit: int = 10, user_id: int = None):
                         break
                 
                 logger.info(f"Found {len(all_links)} results from {domain}")
-                
-                # Random delay between requests to avoid detection
                 await asyncio.sleep(random.uniform(2, 4))
                 
             except Exception as e:
@@ -238,60 +210,11 @@ async def google_search(query: str, limit: int = 10, user_id: int = None):
         if len(all_links) >= limit:
             break
     
-    # Update last search time
     if user_id:
         user_last_search[user_id] = time.time()
     
-    # If still no results, try a simpler approach
+    # Fallback for specific queries
     if len(all_links) == 0:
-        logger.warning(f"No results for {query}, trying fallback")
-        # Try a more generic search
-        generic_queries = [
-            f"{query} site:shopify.com",
-            f"{query} site:stripe.com",
-            f'"powered by shopify" {query}'
-        ]
-        
-        for gen_query in generic_queries[:2]:
-            encoded_gen = quote(gen_query)
-            fallback_url = f"https://www.google.com/search?q={encoded_gen}&num=20&hl=en"
-            
-            try:
-                resp = curl_requests.get(
-                    fallback_url,
-                    headers={'User-Agent': random.choice(USER_AGENTS)},
-                    timeout=25,
-                    impersonate="chrome120"
-                )
-                
-                if resp.status_code == 200:
-                    tree = HTMLParser(resp.text)
-                    for a in tree.css('a[href^="/url?q="]'):
-                        href = a.attrs.get('href', '')
-                        if href.startswith('/url?q='):
-                            real_url = href.split('/url?q=')[1].split('&')[0]
-                            if real_url.startswith('http') and real_url not in seen:
-                                seen.add(real_url)
-                                all_links.append(real_url)
-                                if len(all_links) >= limit:
-                                    break
-                await asyncio.sleep(2)
-            except:
-                pass
-            
-            if len(all_links) >= limit:
-                break
-    
-    # Remove duplicates while preserving order
-    unique_links = []
-    for link in all_links:
-        if link not in unique_links:
-            unique_links.append(link)
-    
-    logger.info(f"Final results for {query}: {len(unique_links)} unique URLs")
-    
-    # Return test URLs if absolutely nothing found
-    if len(unique_links) == 0:
         if query.lower() in ['test', 'facebook', 'google', 'test10']:
             return [
                 "https://example.com",
@@ -300,10 +223,16 @@ async def google_search(query: str, limit: int = 10, user_id: int = None):
                 "https://reddit.com",
             ]
     
+    unique_links = []
+    for link in all_links:
+        if link not in unique_links:
+            unique_links.append(link)
+    
+    logger.info(f"Final results for {query}: {len(unique_links)} unique URLs")
     return unique_links[:limit]
 
 # ----------------------------------------------------------------------------------
-# SITE DETAILS CHECKER (Same as before)
+# SITE DETAILS CHECKER
 # ----------------------------------------------------------------------------------
 
 def extract_domain(url: str):
@@ -360,15 +289,12 @@ async def check_site_details(url: str):
         details["status_code"] = resp.status_code
         txt_lower = resp.text.lower()
         
-        # Cloudflare check
         if any('cloudflare' in k.lower() for k in resp.headers.keys()):
             details["cloudflare"] = "YES"
         
-        # Captcha check
         if "captcha" in txt_lower or "recaptcha" in txt_lower:
             details["captcha"] = "YES"
         
-        # GraphQL check
         if "graphql" in txt_lower:
             details["graphql"] = "YES"
         
@@ -442,9 +368,6 @@ async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Registration successful!\n\nNow you can use /cmds to see all commands."
         )
-
-async def cmd_cmds(update: Update, ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user
 
 async def cmd_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -526,11 +449,9 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await status_msg.edit_text(f"Found {len(results)} URLs. Analyzing {min(len(results), limit)} sites...")
     
-    # Process all URLs concurrently
     tasks = [async_check_site_details(url) for url in results[:limit]]
     details_list = await asyncio.gather(*tasks)
     
-    # Create output file
     timestamp = int(time.time())
     temp_dir = tempfile.gettempdir()
     filename = os.path.join(temp_dir, f"dork_results_{timestamp}.txt")
@@ -559,7 +480,6 @@ async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         f.write(f"\n@Mod_By_ThuYa\n")
     
-    # Send file
     try:
         with open(filename, "rb") as file_data:
             doc = InputFile(file_data, filename=f"dork_{query_part[:30]}_{timestamp}.txt")
@@ -611,7 +531,6 @@ async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------------------------------------------------------------------------
 
 async def run_health_server():
-    """Simple health check for Railway"""
     try:
         from aiohttp import web
         async def health(request):
@@ -631,13 +550,10 @@ async def run_health_server():
 # ----------------------------------------------------------------------------------
 
 async def main():
-    # Start health server
     asyncio.create_task(run_health_server())
     
-    # Build application
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # Add handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("register", cmd_register))
     app.add_handler(CommandHandler("cmds", cmd_cmds))
@@ -645,20 +561,15 @@ async def main():
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback_handler))
     
-    logger.info("Bot starting on Railway (Advanced Google Search)...")
-    logger.info("Using curl_cffi with browser rotation")
-    logger.info("Bot is ready to receive commands!")
+    logger.info("Bot starting on Railway...")
     
-    # Start bot
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
     
-    # Keep running
     try:
         await asyncio.Event().wait()
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
         await app.updater.stop()
         await app.stop()
 

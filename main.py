@@ -22,7 +22,6 @@ from telegram.ext import (
     filters,
 )
 
-# For parsing Google results
 from bs4 import BeautifulSoup
 
 # ----------------------------------------------------------------------------------
@@ -39,7 +38,7 @@ logger = logging.getLogger(__name__)
 # GLOBALS
 # ----------------------------------------------------------------------------------
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8286273030:AAGX2W8irJfQuiOb5sEAt1dT4pp5Y6eM650")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8770379893"))
 REGISTERED_USERS_FILE = os.path.join(os.getcwd(), "registered_users.json")
 
@@ -85,14 +84,10 @@ def register_user(user_id):
         save_registered_users(registered)
 
 # ----------------------------------------------------------------------------------
-# GOOGLE SEARCH (No Selenium - Using Requests + BeautifulSoup)
+# GOOGLE SEARCH (No Selenium)
 # ----------------------------------------------------------------------------------
 
 async def google_search(query: str, limit: int = 10):
-    """
-    Google search using requests + BeautifulSoup
-    No Chrome/Selenium needed!
-    """
     all_links = []
     seen = set()
     
@@ -100,9 +95,6 @@ async def google_search(query: str, limit: int = 10):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
     }
     
     encoded_query = quote(query)
@@ -113,7 +105,7 @@ async def google_search(query: str, limit: int = 10):
     
     try:
         session = requests.Session()
-        resp = session.get(url, headers=headers, timeout=20, allow_redirects=True)
+        resp = session.get(url, headers=headers, timeout=20)
         
         if resp.status_code != 200:
             logger.error(f"Google returned status {resp.status_code}")
@@ -121,39 +113,16 @@ async def google_search(query: str, limit: int = 10):
         
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Google result selectors
-        result_selectors = [
-            'div.yuRUbf a',
-            'div.g a',
-            'a[jsname="UWckNb"]',
-            'div.tF2Cxc a',
-            'h3 a'
-        ]
-        
-        for selector in result_selectors:
-            links = soup.select(selector)
-            for link in links:
-                href = link.get('href')
-                if href and href.startswith('http') and 'google.com' not in href and href not in seen:
-                    seen.add(href)
-                    all_links.append(href)
+        # Find all links
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if href.startswith('/url?q='):
+                real_url = href.split('/url?q=')[1].split('&')[0]
+                if real_url.startswith('http') and 'google.com' not in real_url and real_url not in seen:
+                    seen.add(real_url)
+                    all_links.append(real_url)
                     if len(all_links) >= limit:
                         break
-            if len(all_links) >= limit:
-                break
-        
-        # Alternative: search for /url?q= pattern
-        if len(all_links) < limit:
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                if href.startswith('/url?q='):
-                    # Extract real URL
-                    real_url = href.split('/url?q=')[1].split('&')[0]
-                    if real_url.startswith('http') and 'google.com' not in real_url and real_url not in seen:
-                        seen.add(real_url)
-                        all_links.append(real_url)
-                        if len(all_links) >= limit:
-                            break
         
         logger.info(f"Found {len(all_links)} results")
         
@@ -202,77 +171,63 @@ async def check_site_details(url: str):
         "design": "None",
     }
     
-    # DNS check
     domain = extract_domain(url)
     if domain:
         try:
             socket.gethostbyname(domain)
-            details["dns"] = "✅ resolvable"
+            details["dns"] = "resolvable"
         except:
-            details["dns"] = "❌ unresolvable"
+            details["dns"] = "unresolvable"
     
-    # HTTP request
     try:
         import urllib3
         urllib3.disable_warnings()
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         resp = requests.get(url, timeout=12, verify=True, headers=headers)
-        details["ssl"] = "✅ valid"
+        details["ssl"] = "valid"
         details["status_code"] = resp.status_code
         txt_lower = resp.text.lower()
         
-        # Cloudflare
         if any('cloudflare' in k.lower() for k in resp.headers.keys()):
-            details["cloudflare"] = "✅ YES"
-        else:
-            details["cloudflare"] = "🔥 NO"
+            details["cloudflare"] = "YES"
         
-        # Captcha
         if "captcha" in txt_lower or "recaptcha" in txt_lower:
-            details["captcha"] = "✅ YES"
-        else:
-            details["captcha"] = "🔥 NO"
+            details["captcha"] = "YES"
         
-        # GraphQL
         if "graphql" in txt_lower:
-            details["graphql"] = "✅ YES"
-        else:
-            details["graphql"] = "🔥 NO"
+            details["graphql"] = "YES"
         
-        # Language
         lang = extract_language(resp.text)
         if lang:
             details["language"] = lang
         
-        # Payment Gateways
         found_gw = [gw for gw in PAYMENT_GATEWAYS if gw.lower() in txt_lower]
         details["gateways"] = ", ".join(set(found_gw)) if found_gw else "None"
         
-        # Tech stack
         stack = detect_tech_stack(resp.text)
         details.update(stack)
         
     except requests.exceptions.SSLError:
-        details["ssl"] = "⚠️ invalid"
+        details["ssl"] = "invalid"
         try:
             resp = requests.get(url, timeout=12, verify=False, headers=headers)
             details["status_code"] = resp.status_code
             txt_lower = resp.text.lower()
             if "captcha" in txt_lower:
-                details["captcha"] = "✅ YES"
+                details["captcha"] = "YES"
             found_gw = [gw for gw in PAYMENT_GATEWAYS if gw.lower() in txt_lower]
             details["gateways"] = ", ".join(set(found_gw)) if found_gw else "None"
             stack = detect_tech_stack(resp.text)
             details.update(stack)
-            details["cloudflare"] = "🔥 NO"
         except:
             pass
     except Exception as e:
-        details["status_code"] = str(e)[:50]
+        pass
+    
+    details["captcha"] = "✅ YES" if details["captcha"] == "YES" else "🔥 NO"
+    details["cloudflare"] = "✅ YES" if details["cloudflare"] == "YES" else "🔥 NO"
+    details["graphql"] = "✅ YES" if details["graphql"] == "YES" else "🔥 NO"
     
     return details
 
@@ -296,43 +251,174 @@ async def async_check_site_details(url: str):
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_user_registered(user_id):
-        await update.message.reply_text(
-            "❌ You are not registered.\n\n"
-            "Please type /register first."
-        )
+        await update.message.reply_text("You are not registered. Please type /register first.")
     else:
-        await update.message.reply_text(
-            "✅ Welcome back!\n\n"
-            "📖 Type /cmds to see available commands.\n\n"
-            "⚡ @Mod_By_ThuYa"
-        )
+        await update.message.reply_text("Welcome back! Type /cmds to see how to use this bot.")
 
 async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if is_user_registered(user_id):
-        await update.message.reply_text("✅ You are already registered!")
+        await update.message.reply_text("You are already registered!")
     else:
         register_user(user_id)
-        await update.message.reply_text(
-            "✅ Registration successful!\n\n"
-            "Now you can use /cmds to see all commands."
-        )
+        await update.message.reply_text("Registration successful! Now you can use /cmds.")
 
 async def cmd_cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_user_registered(user_id):
-        await update.message.reply_text("❌ You must /register first.")
+        await update.message.reply_text("You must /register before using any commands.")
         return
     
-    text = """
-📖 **Bot Commands**
+    text = "Commands:\n/dork <query> <count>\nExample: /dork shopify 50\n\nAdmin: /broadcast <message>"
+    await update.message.reply_text(text)
 
-**Basic Commands:**
-• `/start` - Check bot status
-• `/register` - Register to use bot
-• `/cmds` - Show this menu
+async def cmd_dork(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not is_user_registered(user_id):
+        await update.message.reply_text("You must /register first.")
+        return
+    
+    raw_text = update.message.text.strip()
+    just_args = raw_text[len("/dork"):].strip()
+    
+    if not just_args or " " not in just_args:
+        await update.message.reply_text("Usage: /dork <query> <count>\nExample: /dork shopify 50")
+        return
+    
+    query_part, count_str = just_args.rsplit(" ", 1)
+    query_part = query_part.strip().strip('"')
+    count_str = count_str.strip()
+    
+    if not count_str.isdigit():
+        await update.message.reply_text("Count must be a number.")
+        return
+    
+    limit = min(max(int(count_str), 1), 150)
+    
+    status_msg = await update.message.reply_text(f"Searching for {query_part}... Please wait.")
+    
+    try:
+        results = await async_google_search(query_part, limit)
+    except Exception as e:
+        await status_msg.edit_text(f"Error: {str(e)[:100]}")
+        return
+    
+    if not results:
+        await status_msg.edit_text(f"No results found for: {query_part}\nTry a simpler query like: /dork facebook 10")
+        return
+    
+    await status_msg.edit_text(f"Found {len(results)} URLs. Analyzing...")
+    
+    tasks = [async_check_site_details(url) for url in results[:limit]]
+    details_list = await asyncio.gather(*tasks)
+    
+    timestamp = int(time.time())
+    temp_dir = tempfile.gettempdir()
+    filename = os.path.join(temp_dir, f"dork_{timestamp}.txt")
+    
+    with open(filename, "w", encoding="utf-8") as f:
+        for d in details_list:
+            f.write(f"URL: {d['url']}\n")
+            f.write(f"DNS: {d['dns']} | SSL: {d['ssl']}\n")
+            f.write(f"Status: {d['status_code']} | Cloudflare: {d['cloudflare']}\n")
+            f.write(f"Captcha: {d['captcha']} | GraphQL: {d['graphql']}\n")
+            f.write(f"Gateways: {d['gateways']}\n")
+            f.write(f"Language: {d['language']}\n")
+            f.write(f"Front-end: {d['front_end']}\n")
+            f.write(f"Back-end: {d['back_end']}\n")
+            f.write(f"Design: {d['design']}\n")
+            f.write(f"{'='*60}\n\n")
+    
+    try:
+        with open(filename, "rb") as file_data:
+            doc = InputFile(file_data, filename=f"dork_{timestamp}.txt")
+            await update.message.reply_document(document=doc, caption=f"Results for: {query_part[:50]}")
+        await status_msg.delete()
+    except Exception as e:
+        await status_msg.edit_text(f"Error sending file: {e}")
+    finally:
+        try:
+            os.remove(filename)
+        except:
+            pass
 
-**Dork Command:**
-• `/dork <query> <count>` - Search for sites
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("Admin only command.")
+        return
+    
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+    
+    message = parts[1]
+    users = load_registered_users()
+    count = 0
+    for uid in users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=f"Broadcast: {message}")
+            count += 1
+            await asyncio.sleep(0.1)
+        except:
+            pass
+    
+    await update.message.reply_text(f"Sent to {count} users.")
 
-**Examples:**
+async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Unknown command. Type /cmds for help.")
+
+# ----------------------------------------------------------------------------------
+# HEALTH CHECK
+# ----------------------------------------------------------------------------------
+
+async def run_health_server():
+    try:
+        from aiohttp import web
+        async def health(request):
+            return web.Response(text="OK")
+        app = web.Application()
+        app.router.add_get('/health', health)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', 8080)
+        await site.start()
+        logger.info("Health check server started")
+    except:
+        pass
+
+# ----------------------------------------------------------------------------------
+# MAIN
+# ----------------------------------------------------------------------------------
+
+async def main():
+    asyncio.create_task(run_health_server())
+    
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("register", cmd_register))
+    app.add_handler(CommandHandler("cmds", cmd_cmds))
+    app.add_handler(CommandHandler("dork", cmd_dork))
+    app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback_handler))
+    
+    logger.info("Bot starting on Railway...")
+    
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        await app.updater.stop()
+        await app.stop()
+
+# ----------------------------------------------------------------------------------
+# ENTRY POINT
+# ----------------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    asyncio.run(main())

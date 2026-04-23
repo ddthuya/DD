@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # GLOBALS
 # ----------------------------------------------------------------------------------
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8286273030:AAGX2W8irJfQuiOb5sEAt1dT4pp5Y6eM650")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8770379893"))
 REGISTERED_USERS_FILE = os.path.join(os.getcwd(), "registered_users.json")
 

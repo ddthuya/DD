@@ -1,0 +1,5 @@
+*.pyc
+__pycache__/
+registered_users.json
+*.txt
+.env

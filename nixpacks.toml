@@ -2,7 +2,7 @@
 nixPkgs = ["google-chrome", "chromedriver"]
 
 [phases.install]
-cmds = ["pip install --no-cache-dir -r requirements.txt"]
+cmds = ["apt-get update && apt-get install -y wget gnupg unzip", "pip install --no-cache-dir -r requirements.txt"]
 
 [start]
 cmd = "python Site_Dorker_Bot.py"
